@@ -11,7 +11,7 @@ cabal-version:      3.0
 --   http://haskell.org/cabal/users-guide/
 --
 -- The name of the package.
-name:               crafting-interpreters-hs
+name:               Lox
 
 -- The package version.
 -- See the Haskell package versioning policy (PVP) for standards
@@ -53,6 +53,12 @@ extra-doc-files:    CHANGELOG.md
 common warnings
     ghc-options: -Wall
 
+library
+    exposed-modules:  Lox.Scanner
+    build-depends:    base ^>=4.18.3.0, mtl, extra
+    hs-source-dirs:   src
+    default-language: Haskell2010
+
 executable crafting-interpreters-hs
     -- Import common warning flags.
     import:           warnings
@@ -61,13 +67,13 @@ executable crafting-interpreters-hs
     main-is:          Main.hs
 
     -- Modules included in this executable, other than Main.
-    -- other-modules:
+    -- other-modules:    Scanner.hs
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
-    build-depends:    base ^>=4.18.3.0
+    build-depends:    base ^>=4.18.3.0, Lox
 
     -- Directories containing source files.
     hs-source-dirs:   app

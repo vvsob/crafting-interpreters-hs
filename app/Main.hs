@@ -4,7 +4,7 @@ import Lox.Scanner
 
 run :: String -> IO ()
 run source = mapM_ print tokens
-    where tokens = scanTokens source
+    where tokens = scanTokensFromSource source
 
 main :: IO ()
-main = putStrLn "Hello, Haskell!"
+main = getLine >>= run 

@@ -1,6 +1,7 @@
 import Lox.Scanner
 import Lox.Parser
 import Lox.Interpreter
+import System.IO
 
 run :: String -> IO ()
 run source = print result
@@ -9,4 +10,4 @@ run source = print result
           tokens = scanTokensFromSource source
 
 main :: IO ()
-main = getLine >>= run 
+main = putStr ">> " >> hFlush stdout >> getLine >>= run 

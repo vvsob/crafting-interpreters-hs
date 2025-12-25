@@ -1,7 +1,7 @@
 module Lox.Scanner (
-    TokenType,
-    Object,
-    Token,
+    TokenType (..),
+    Object (..),
+    Token (getType, getLexeme, getObject),
     scanTokensFromSource
 ) where
 
@@ -20,9 +20,9 @@ data TokenType = LEFT_PAREN | RIGHT_PAREN | LEFT_BRACE | RIGHT_BRACE
                | AND | CLASS | ELSE | FALSE | FUN | FOR | IF | NIL | OR
                | PRINT | RETURN | SUPER | THIS | TRUE | VAR | WHILE
                | EOF
-    deriving Show
+    deriving (Show, Eq)
 
-data Object = NullObject | StringObject String | NumberObject Double deriving Show
+data Object = NullObject | StringObject String | NumberObject Double | BoolObject Bool deriving Show
 
 data Token = Token {
     getType :: TokenType, 

@@ -22,7 +22,18 @@ data TokenType = LEFT_PAREN | RIGHT_PAREN | LEFT_BRACE | RIGHT_BRACE
                | EOF
     deriving (Show, Eq)
 
-data Object = NullObject | StringObject String | NumberObject Double | BoolObject Bool deriving Show
+data Object = NullObject 
+            | StringObject String 
+            | NumberObject Double 
+            | BoolObject Bool 
+    deriving (Eq)
+
+instance Show Object where
+    show NullObject = "Nil"
+    show (StringObject s) = show s
+    show (NumberObject x) = show x
+    show (BoolObject False) = "false"
+    show (BoolObject True) = "true"
 
 data Token = Token {
     getType :: TokenType, 

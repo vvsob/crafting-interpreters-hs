@@ -43,7 +43,7 @@ scanTokensFromSource source = evalState scanTokens (emptyScannerState source)
 scanTokens :: State ScannerState [Token]
 scanTokens = do
     atEnd <- isAtEnd
-    if atEnd then return [] else do
+    if atEnd then return <$> addToken EOF else do
         maybeToken <- scanToken
         case maybeToken of
             Nothing -> scanTokens

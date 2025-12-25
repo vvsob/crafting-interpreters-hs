@@ -1,5 +1,5 @@
 module Lox.Parser (
-    expression
+    parse
 ) where
 
 import Control.Monad

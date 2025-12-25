@@ -9,4 +9,4 @@ data Expr =
     Unary Token Expr | 
     Binary Expr Token Expr | 
     Grouping Expr
-
+    deriving Show

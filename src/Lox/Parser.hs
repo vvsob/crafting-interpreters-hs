@@ -55,12 +55,12 @@ unary = do
 primary :: State ParserState Expr
 primary = do
     token <- advance
-    case getType token of
+    case tokenType token of
         FALSE -> return $ Literal $ BoolObject False
         TRUE -> return $ Literal $ BoolObject True
         NIL -> return $ Literal NullObject
-        NUMBER -> return $ Literal $ getObject token
-        STRING -> return $ Literal $ getObject token
+        NUMBER -> return $ Literal $ tokenObject token
+        STRING -> return $ Literal $ tokenObject token
         LEFT_PAREN -> do
             expr <- expression
             consume RIGHT_PAREN "Expected '(' after ')'"
@@ -89,7 +89,7 @@ matchToken (t:ts) = do
 check :: TokenType -> State ParserState Bool
 check t = do
     atEnd <- isAtEnd
-    if atEnd then return False else (== t) . getType <$> peek
+    if atEnd then return False else (== t) . tokenType <$> peek
 
 consume :: TokenType -> String -> State ParserState Token
 consume t msg = do
@@ -103,4 +103,4 @@ peek :: State ParserState Token
 peek = gets (head . tokens) 
 
 isAtEnd :: State ParserState Bool
-isAtEnd = (== EOF) . getType <$> peek
+isAtEnd = (== EOF) . tokenType <$> peek

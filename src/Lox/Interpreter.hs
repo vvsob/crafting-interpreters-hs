@@ -16,7 +16,7 @@ interpret (Literal value) = return value
 interpret (Grouping expr) = interpret expr
 interpret (Unary op expr) = do 
     right <- interpret expr
-    case (getType op, right) of
+    case (tokenType op, right) of
         (MINUS, NumberObject x) -> return $ NumberObject (-x)
         (BANG, NullObject) -> return $ BoolObject False
         (BANG, BoolObject x) -> return $ BoolObject (not x)
@@ -25,7 +25,7 @@ interpret (Unary op expr) = do
 interpret (Binary leftExpr op rightExpr) = do
     left <- interpret leftExpr
     right <- interpret rightExpr
-    case (getType op, left, right) of
+    case (tokenType op, left, right) of
         (PLUS, NumberObject x, NumberObject y) -> return $ NumberObject (x + y)
         (MINUS, NumberObject x, NumberObject y) -> return $ NumberObject (x - y)
         (SLASH, NumberObject x, NumberObject y) -> return $ NumberObject (x / y)

@@ -1,7 +1,7 @@
 module Lox.Scanner (
     TokenType (..),
     Object (..),
-    Token (getType, getLexeme, getObject),
+    Token (..),
     scanTokensFromSource
 ) where
 
@@ -36,10 +36,10 @@ instance Show Object where
     show (BoolObject True) = "true"
 
 data Token = Token {
-    getType :: TokenType, 
-    getLexeme :: String,
-    getObject :: Object,
-    getLineNumber :: Int
+    tokenType :: TokenType, 
+    tokenLexeme :: String,
+    tokenObject :: Object,
+    tokenLineNumber :: Int
 } deriving Show
 
 data ScannerState = ScannerState {source :: String, current :: String, lineNumber :: Int}
@@ -169,7 +169,7 @@ addLiteralToken token object = state $ scannerAddLiteralToken token object
 scannerAddLiteralToken :: TokenType -> Object -> ScannerState -> (Token, ScannerState)
 scannerAddLiteralToken tokenType object state@ScannerState {current=current, lineNumber=lineNumber} =
     (token, state)
-    where token = Token {getType=tokenType, getLexeme=current, getObject=object, getLineNumber=lineNumber}
+    where token = Token {tokenType=tokenType, tokenLexeme=current, tokenObject=object, tokenLineNumber=lineNumber}
 
 getKeywordTokenType :: String -> TokenType
 getKeywordTokenType "and" = AND

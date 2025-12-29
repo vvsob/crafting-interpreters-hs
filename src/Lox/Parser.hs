@@ -1,4 +1,5 @@
 module Lox.Parser (
+    ParserError (..),
     parse
 ) where
 
@@ -8,6 +9,8 @@ import Lox.Scanner
 import Lox.Expr
 
 data ParserState = ParserState {tokens :: [Token]}
+
+data ParserError = MismatchedParenthesesError | ExpectedExpressionError
 
 -- expression     → equality ;
 -- equality       → comparison ( ( "!=" | "==" ) comparison )* ;
@@ -19,63 +22,82 @@ data ParserState = ParserState {tokens :: [Token]}
 -- primary        → NUMBER | STRING | "true" | "false" | "nil"
 --                | "(" expression ")" ;
 
-parse :: [Token] -> Expr
+parse :: [Token] -> Either ParserError Expr
 parse tokens = evalState expression (ParserState {tokens=tokens})
 
-expression :: State ParserState Expr
+expression :: State ParserState (Either ParserError Expr)
 expression = equality
 
-equality :: State ParserState Expr
+equality :: State ParserState (Either ParserError Expr)
 equality = do
-    expr <- comparison
-    mergeExpressionMaybe expr <$> matchTail [BANG_EQUAL, EQUAL_EQUAL] comparison
+    exprMaybe <- comparison
+    case exprMaybe of
+        Left err -> return $ Left err
+        Right expr -> fmap (mergeExpressionMaybe expr) <$> matchTail [BANG_EQUAL, EQUAL_EQUAL] comparison
 
-comparison :: State ParserState Expr
+comparison :: State ParserState (Either ParserError Expr)
 comparison = do
-    expr <- term
-    mergeExpressionMaybe expr <$> matchTail [GREATER, GREATER_EQUAL, LESS, LESS_EQUAL] term
+    exprMaybe <- term 
+    case exprMaybe of
+        Left err -> return $ Left err
+        Right expr -> fmap (mergeExpressionMaybe expr) <$> matchTail [GREATER, GREATER_EQUAL, LESS, LESS_EQUAL] term
 
-term :: State ParserState Expr
+term :: State ParserState (Either ParserError Expr)
 term = do
-    expr <- factor
-    mergeExpressionMaybe expr <$> matchTail [MINUS, PLUS] factor
+    exprMaybe <- factor
+    case exprMaybe of
+        Left err -> return $ Left err
+        Right expr -> fmap (mergeExpressionMaybe expr) <$> matchTail [MINUS, PLUS] factor
 
-factor :: State ParserState Expr
+factor :: State ParserState (Either ParserError Expr)
 factor = do
-    expr <- unary
-    mergeExpressionMaybe expr <$> matchTail [SLASH, STAR] unary
+    exprMaybe <- unary
+    case exprMaybe of
+        Left err -> return $ Left err
+        Right expr -> fmap (mergeExpressionMaybe expr) <$> matchTail [SLASH, STAR] unary
 
-unary :: State ParserState Expr
+unary :: State ParserState (Either ParserError Expr)
 unary = do
     maybeOperator <- matchToken [BANG, MINUS]
     case maybeOperator of
         Nothing -> primary
-        Just op -> Unary op <$> unary
+        Just op -> do
+            exprMaybe <- unary
+            case exprMaybe of
+                Left err -> return $ Left err
+                Right expr -> return $ Right $ Unary op expr
 
-primary :: State ParserState Expr
+primary :: State ParserState (Either ParserError Expr)
 primary = do
     token <- advance
     case tokenType token of
-        FALSE -> return $ Literal $ BoolObject False
-        TRUE -> return $ Literal $ BoolObject True
-        NIL -> return $ Literal NullObject
-        NUMBER -> return $ Literal $ tokenObject token
-        STRING -> return $ Literal $ tokenObject token
+        FALSE -> return $ Right $ Literal $ BoolObject False
+        TRUE -> return $ Right $ Literal $ BoolObject True
+        NIL -> return $ Right $ Literal NullObject
+        NUMBER -> return $ Right $ Literal $ tokenObject token
+        STRING -> return $ Right $ Literal $ tokenObject token
         LEFT_PAREN -> do
-            expr <- expression
-            consume RIGHT_PAREN "Expected '(' after ')'"
-            return $ Grouping expr
-        _ -> error "Expected expression"
+            exprMaybe <- expression
+            case exprMaybe of
+                Left err -> return $ Left err
+                Right expr -> do 
+                    consume RIGHT_PAREN MismatchedParenthesesError
+                    return $ Right $ Grouping expr
+        _ -> return $ Left ExpectedExpressionError
 
-matchTail :: [TokenType] -> State ParserState Expr -> State ParserState (Maybe (Token, Expr))
+matchTail :: [TokenType] -> State ParserState (Either ParserError Expr) -> State ParserState (Either ParserError (Maybe (Token, Expr)))
 matchTail tokenTypes f = do
     maybeOperator <- matchToken tokenTypes
     case maybeOperator of
-        Nothing -> return Nothing
+        Nothing -> return $ Right Nothing
         Just op -> do
-            expr <- comparison
-            rest <- matchTail tokenTypes f
-            return $ Just (op, mergeExpressionMaybe expr rest)
+            exprMaybe <- comparison
+            restMaybe <- matchTail tokenTypes f
+            case (exprMaybe, restMaybe) of
+                (Left err, _) -> return $ Left err
+                (_, Left err) -> return $ Left err
+                (Right expr, Right rest) -> return $ Right $ Just (op, mergeExpressionMaybe expr rest)
+
 mergeExpressionMaybe :: Expr -> Maybe (Token, Expr) -> Expr
 mergeExpressionMaybe expr Nothing = expr
 mergeExpressionMaybe left (Just (op, right)) = Binary left op right
@@ -91,10 +113,10 @@ check t = do
     atEnd <- isAtEnd
     if atEnd then return False else (== t) . tokenType <$> peek
 
-consume :: TokenType -> String -> State ParserState Token
-consume t msg = do
+consume :: TokenType -> ParserError -> State ParserState (Either ParserError Token)
+consume t err = do
     isOk <- check t
-    if isOk then advance else error msg
+    if isOk then Right <$> advance else return $ Left err
 
 advance :: State ParserState Token
 advance = state (\s@ParserState {tokens=(t:ts)} -> (t, s {tokens = ts}))

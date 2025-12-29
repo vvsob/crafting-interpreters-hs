@@ -2,6 +2,7 @@ module Lox.Scanner (
     TokenType (..),
     Object (..),
     Token (..),
+    ScannerError (..),
     scanTokensFromSource
 ) where
 
@@ -44,21 +45,24 @@ data Token = Token {
 
 data ScannerState = ScannerState {source :: String, current :: String, lineNumber :: Int}
 
+data ScannerError = UnexpectedCharacterError
+
 emptyScannerState :: String -> ScannerState
 emptyScannerState source = 
     ScannerState {source=source, current="", lineNumber=1}
 
-scanTokensFromSource :: String -> [Token]
+scanTokensFromSource :: String -> Either ScannerError [Token]
 scanTokensFromSource source = evalState scanTokens (emptyScannerState source)
 
-scanTokens :: State ScannerState [Token]
+scanTokens :: State ScannerState (Either ScannerError [Token])
 scanTokens = do
     atEnd <- isAtEnd
-    if atEnd then return <$> addToken EOF else do
+    if atEnd then return . return <$> addToken EOF else do
         maybeToken <- scanToken
         case maybeToken of
-            Nothing -> scanTokens
-            Just t -> (t :) <$> scanTokens
+            Right Nothing -> scanTokens
+            Right (Just t) -> fmap (fmap (t :)) scanTokens
+            Left err -> return $ Left err
 
 isAtEnd :: State ScannerState Bool
 isAtEnd = gets scannerIsAtEnd
@@ -66,32 +70,34 @@ isAtEnd = gets scannerIsAtEnd
 scannerIsAtEnd :: ScannerState -> Bool
 scannerIsAtEnd ScannerState {source=source} = null source
 
-scanToken :: State ScannerState (Maybe Token)
+scanToken :: State ScannerState (Either ScannerError (Maybe Token))
 scanToken = do
     resetCurrent
     c <- advance
+    let ok = Right . Just
+    let nothing = Right Nothing
     case c of
-        '(' -> Just <$> addToken LEFT_PAREN
-        ')' -> Just <$> addToken RIGHT_PAREN
-        '{' -> Just <$> addToken LEFT_BRACE
-        '}' -> Just <$> addToken RIGHT_BRACE
-        ',' -> Just <$> addToken COMMA
-        '.' -> Just <$> addToken DOT
-        '-' -> Just <$> addToken MINUS
-        '+' -> Just <$> addToken PLUS
-        ';' -> Just <$> addToken SEMICOLON
-        '*' -> Just <$> addToken STAR
-        '!' -> Just <$> ifM (match '=') (addToken BANG_EQUAL) (addToken BANG)
-        '=' -> Just <$> ifM (match '=') (addToken EQUAL_EQUAL) (addToken EQUAL)
-        '<' -> Just <$> ifM (match '=') (addToken LESS_EQUAL) (addToken LESS)
-        '>' -> Just <$> ifM (match '=') (addToken GREATER_EQUAL) (addToken GREATER)
-        '/' -> ifM (match '/') (advanceLine >> return Nothing) (Just <$> addToken SLASH)
-        '"' -> Just <$> scanString
-        ' ' -> return Nothing
-        '\r' -> return Nothing
-        '\t' -> return Nothing
-        '\n' -> return Nothing
-        c -> if isDigit c then Just <$> scanNumber else if isAlpha c then Just <$> scanIdentifier else error "Unexpected character"
+        '(' -> ok <$> addToken LEFT_PAREN
+        ')' -> ok <$> addToken RIGHT_PAREN
+        '{' -> ok <$> addToken LEFT_BRACE
+        '}' -> ok <$> addToken RIGHT_BRACE
+        ',' -> ok <$> addToken COMMA
+        '.' -> ok <$> addToken DOT
+        '-' -> ok <$> addToken MINUS
+        '+' -> ok <$> addToken PLUS
+        ';' -> ok <$> addToken SEMICOLON
+        '*' -> ok <$> addToken STAR
+        '!' -> ok <$> ifM (match '=') (addToken BANG_EQUAL) (addToken BANG)
+        '=' -> ok <$> ifM (match '=') (addToken EQUAL_EQUAL) (addToken EQUAL)
+        '<' -> ok <$> ifM (match '=') (addToken LESS_EQUAL) (addToken LESS)
+        '>' -> ok <$> ifM (match '=') (addToken GREATER_EQUAL) (addToken GREATER)
+        '/' -> ifM (match '/') (advanceLine >> return nothing) (ok <$> addToken SLASH)
+        '"' -> ok <$> scanString
+        ' ' -> return nothing
+        '\r' -> return nothing
+        '\t' -> return nothing
+        '\n' -> return nothing
+        c -> if isDigit c then ok <$> scanNumber else if isAlpha c then ok <$> scanIdentifier else return $ Left UnexpectedCharacterError
 
 scanString :: State ScannerState Token
 scanString = do

@@ -8,8 +8,8 @@ import Control.Monad.State
 
 data InterpreterState = InterpreterState
 
-eval :: Expr -> Object
-eval expr = evalState (interpret expr) InterpreterState
+eval :: Expr -> IO Object
+eval expr = return $ evalState (interpret expr) InterpreterState
 
 interpret :: Expr -> State InterpreterState Object
 interpret (Literal value) = return value

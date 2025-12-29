@@ -5,6 +5,8 @@ module Lox.Parser (
 
 import Control.Monad
 import Control.Monad.State
+import Data.Either
+import Data.Maybe
 import Lox.Scanner
 import Lox.Expr
 
@@ -13,18 +15,25 @@ data ParserState = ParserState {tokens :: [Token]}
 data ParserError = MismatchedParenthesesError 
                  | ExpectedExpressionError 
                  | ExpectedSemicolonError
+                 | ExpectedVariableName
+                 | InvalidAssignmentTarget
     deriving Show
 
--- program        → statement* EOF ;
+-- program        → declaration* EOF ;
+--
+-- declaration    → varDecl
+--                | statement ;
 --
 -- statement      → exprStmt
 --                | printStmt ;
 --
 -- exprStmt       → expression ";" ;
 -- printStmt      → "print" expression ";" ;
+-- varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
 
-
--- expression     → equality ;
+-- expression     → assignment ;
+-- assignment     → IDENTIFIER "=" assignment 
+--                | equality ;
 -- equality       → comparison ( ( "!=" | "==" ) comparison )* ;
 -- comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 -- term           → factor ( ( "-" | "+" ) factor )* ;
@@ -32,7 +41,7 @@ data ParserError = MismatchedParenthesesError
 -- unary          → ( "!" | "-" ) unary
 --                | primary ;
 -- primary        → NUMBER | STRING | "true" | "false" | "nil"
---                | "(" expression ")" ;
+--                | "(" expression ")" | IDENTIFIER;
 
 parse :: [Token] -> Either ParserError [Stmt]
 parse tokens = evalState program (ParserState {tokens=tokens})
@@ -41,7 +50,7 @@ program :: State ParserState (Either ParserError [Stmt])
 program = do
     atEnd <- isAtEnd
     if atEnd then return $ Right [] else do
-        headMaybe <- statement
+        headMaybe <- declaration
         case headMaybe of
             Left err -> return $ Left err
             Right head -> do
@@ -49,6 +58,27 @@ program = do
                 case tailMaybe of
                     Left err -> return $ Left err
                     Right tail -> return $ Right $ head : tail
+declaration :: State ParserState (Either ParserError Stmt)
+declaration = do
+    varMaybe <- matchToken [VAR]
+    case varMaybe of
+        Just _ -> varDeclaration
+        _ -> statement
+
+varDeclaration :: State ParserState (Either ParserError Stmt)
+varDeclaration = do
+    maybeName <- consume IDENTIFIER ExpectedVariableName
+    case maybeName of
+        Left err -> return $ Left err
+        Right name -> do
+            hasInit <- isJust <$> matchToken [EQUAL]
+            initMaybe <- if hasInit then expression else return $ Right $ LiteralExpr NullObject
+            semicolonMaybe <- consume SEMICOLON ExpectedSemicolonError
+            case (initMaybe, semicolonMaybe) of
+                (Left err, _) -> return $ Left err
+                (_, Left err) -> return $ Left err
+                (Right init, Right _) -> return $ Right $ VariableStmt name init
+
 
 statement :: State ParserState (Either ParserError Stmt)
 statement = do
@@ -64,7 +94,7 @@ printStatement = do
     case (valueMaybe, semicolonMaybe) of
         (Left err, _) -> return $ Left err
         (_, Left err) -> return $ Left err
-        (Right value, Right _) -> return $ Right $ Print value
+        (Right value, Right _) -> return $ Right $ PrintStmt value
 
 expressionStatement :: State ParserState (Either ParserError Stmt)
 expressionStatement = do
@@ -73,11 +103,24 @@ expressionStatement = do
     case (valueMaybe, semicolonMaybe) of
         (Left err, _) -> return $ Left err
         (_, Left err) -> return $ Left err
-        (Right value, Right _) -> return $ Right $ Expression value
+        (Right value, Right _) -> return $ Right $ ExpressionStmt value
     
 
 expression :: State ParserState (Either ParserError Expr)
-expression = equality
+expression = assignment
+
+assignment :: State ParserState (Either ParserError Expr)
+assignment = do
+    maybeExpr <- equality
+    matchedEqual <- isJust <$> matchToken [EQUAL]
+    if matchedEqual then do
+        maybeValue <- assignment
+        case (maybeExpr, maybeValue) of
+            (Left err, _) -> return $ Left err
+            (_, Left err) -> return $ Left err
+            (Right (VariableExpr name), Right value) -> return $ Right $ AssignmentExpr name value
+            _ -> return $ Left InvalidAssignmentTarget
+    else return maybeExpr
 
 equality :: State ParserState (Either ParserError Expr)
 equality = do
@@ -116,24 +159,25 @@ unary = do
             exprMaybe <- unary
             case exprMaybe of
                 Left err -> return $ Left err
-                Right expr -> return $ Right $ Unary op expr
+                Right expr -> return $ Right $ UnaryExpr op expr
 
 primary :: State ParserState (Either ParserError Expr)
 primary = do
     token <- advance
     case tokenType token of
-        FALSE -> return $ Right $ Literal $ BoolObject False
-        TRUE -> return $ Right $ Literal $ BoolObject True
-        NIL -> return $ Right $ Literal NullObject
-        NUMBER -> return $ Right $ Literal $ tokenObject token
-        STRING -> return $ Right $ Literal $ tokenObject token
+        FALSE -> return $ Right $ LiteralExpr $ BoolObject False
+        TRUE -> return $ Right $ LiteralExpr $ BoolObject True
+        NIL -> return $ Right $ LiteralExpr NullObject
+        NUMBER -> return $ Right $ LiteralExpr $ tokenObject token
+        STRING -> return $ Right $ LiteralExpr $ tokenObject token
         LEFT_PAREN -> do
             exprMaybe <- expression
             case exprMaybe of
                 Left err -> return $ Left err
                 Right expr -> do 
                     consume RIGHT_PAREN MismatchedParenthesesError
-                    return $ Right $ Grouping expr
+                    return $ Right $ GroupingExpr expr
+        IDENTIFIER -> return $ Right $ VariableExpr token
         _ -> return $ Left ExpectedExpressionError
 
 matchTail :: [TokenType] -> State ParserState (Either ParserError Expr) -> State ParserState (Either ParserError (Maybe (Token, Expr)))
@@ -151,7 +195,7 @@ matchTail tokenTypes f = do
 
 mergeExpressionMaybe :: Expr -> Maybe (Token, Expr) -> Expr
 mergeExpressionMaybe expr Nothing = expr
-mergeExpressionMaybe left (Just (op, right)) = Binary left op right
+mergeExpressionMaybe left (Just (op, right)) = BinaryExpr left op right
 
 matchToken :: [TokenType] -> State ParserState (Maybe Token)
 matchToken [] = return Nothing

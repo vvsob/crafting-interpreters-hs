@@ -6,13 +6,16 @@ module Lox.Expr (
 import Lox.Scanner
 
 data Stmt =
-    Expression Expr |
-    Print Expr
+    ExpressionStmt Expr |
+    PrintStmt Expr |
+    VariableStmt Token Expr
     deriving Show
 
 data Expr = 
-    Literal Object | 
-    Unary Token Expr | 
-    Binary Expr Token Expr | 
-    Grouping Expr
+    LiteralExpr Object | 
+    UnaryExpr Token Expr | 
+    BinaryExpr Expr Token Expr | 
+    GroupingExpr Expr |
+    VariableExpr Token |
+    AssignmentExpr Token Expr
     deriving Show

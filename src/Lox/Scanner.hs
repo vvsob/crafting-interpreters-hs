@@ -31,7 +31,7 @@ data Object = NullObject
 
 instance Show Object where
     show NullObject = "Nil"
-    show (StringObject s) = show s
+    show (StringObject s) = s
     show (NumberObject x) = show x
     show (BoolObject False) = "false"
     show (BoolObject True) = "true"
@@ -45,7 +45,7 @@ data Token = Token {
 
 data ScannerState = ScannerState {source :: String, current :: String, lineNumber :: Int}
 
-data ScannerError = UnexpectedCharacterError
+data ScannerError = UnexpectedCharacterError deriving Show
 
 emptyScannerState :: String -> ScannerState
 emptyScannerState source = 
@@ -96,7 +96,7 @@ scanToken = do
         ' ' -> return nothing
         '\r' -> return nothing
         '\t' -> return nothing
-        '\n' -> return nothing
+        '\n' -> modify (\s@(ScannerState {lineNumber=n}) -> s {lineNumber=n+1}) >> return nothing
         c -> if isDigit c then ok <$> scanNumber else if isAlpha c then ok <$> scanIdentifier else return $ Left UnexpectedCharacterError
 
 scanString :: State ScannerState Token

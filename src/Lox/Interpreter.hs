@@ -1,30 +1,48 @@
 module Lox.Interpreter (
+    runStatements,
     eval   
 ) where
 
 import Lox.Expr
 import Lox.Scanner
 import Control.Monad.State
+import Control.Monad
 
-data InterpreterState = InterpreterState
+data InterpreterState = InterpreterState (IO ())
+
+emptyInterpreter :: InterpreterState
+emptyInterpreter = InterpreterState (return ())
+
+runStatements :: [Stmt] -> IO ()
+runStatements s = io
+    where InterpreterState io = execState (interpret s) emptyInterpreter
+
+interpret :: [Stmt] -> State InterpreterState ()
+interpret = foldr ((>>) . execute) (return ())
+
+execute :: Stmt -> State InterpreterState ()
+execute (Print expr) = do
+    value <- evalFrom expr
+    modify (\(InterpreterState s) -> InterpreterState (s >> print value))
+execute (Expression value) = void $ evalFrom value
 
 eval :: Expr -> IO Object
-eval expr = return $ evalState (interpret expr) InterpreterState
+eval expr = return $ evalState (evalFrom expr) $ InterpreterState (return ())
 
-interpret :: Expr -> State InterpreterState Object
-interpret (Literal value) = return value
-interpret (Grouping expr) = interpret expr
-interpret (Unary op expr) = do 
-    right <- interpret expr
+evalFrom :: Expr -> State InterpreterState Object
+evalFrom (Literal value) = return value
+evalFrom (Grouping expr) = evalFrom expr
+evalFrom (Unary op expr) = do 
+    right <- evalFrom expr
     case (tokenType op, right) of
         (MINUS, NumberObject x) -> return $ NumberObject (-x)
         (BANG, NullObject) -> return $ BoolObject False
         (BANG, BoolObject x) -> return $ BoolObject (not x)
         (BANG, _) -> return $ BoolObject True
         _ -> error "Type error"
-interpret (Binary leftExpr op rightExpr) = do
-    left <- interpret leftExpr
-    right <- interpret rightExpr
+evalFrom (Binary leftExpr op rightExpr) = do
+    left <- evalFrom leftExpr
+    right <- evalFrom rightExpr
     case (tokenType op, left, right) of
         (PLUS, NumberObject x, NumberObject y) -> return $ NumberObject (x + y)
         (MINUS, NumberObject x, NumberObject y) -> return $ NumberObject (x - y)

@@ -10,7 +10,19 @@ import Lox.Expr
 
 data ParserState = ParserState {tokens :: [Token]}
 
-data ParserError = MismatchedParenthesesError | ExpectedExpressionError
+data ParserError = MismatchedParenthesesError 
+                 | ExpectedExpressionError 
+                 | ExpectedSemicolonError
+    deriving Show
+
+-- program        → statement* EOF ;
+--
+-- statement      → exprStmt
+--                | printStmt ;
+--
+-- exprStmt       → expression ";" ;
+-- printStmt      → "print" expression ";" ;
+
 
 -- expression     → equality ;
 -- equality       → comparison ( ( "!=" | "==" ) comparison )* ;
@@ -22,8 +34,47 @@ data ParserError = MismatchedParenthesesError | ExpectedExpressionError
 -- primary        → NUMBER | STRING | "true" | "false" | "nil"
 --                | "(" expression ")" ;
 
-parse :: [Token] -> Either ParserError Expr
-parse tokens = evalState expression (ParserState {tokens=tokens})
+parse :: [Token] -> Either ParserError [Stmt]
+parse tokens = evalState program (ParserState {tokens=tokens})
+
+program :: State ParserState (Either ParserError [Stmt])
+program = do
+    atEnd <- isAtEnd
+    if atEnd then return $ Right [] else do
+        headMaybe <- statement
+        case headMaybe of
+            Left err -> return $ Left err
+            Right head -> do
+                tailMaybe <- program
+                case tailMaybe of
+                    Left err -> return $ Left err
+                    Right tail -> return $ Right $ head : tail
+
+statement :: State ParserState (Either ParserError Stmt)
+statement = do
+    printMaybe <- matchToken [PRINT]
+    case printMaybe of
+        Just _ -> printStatement
+        _ -> expressionStatement
+
+printStatement :: State ParserState (Either ParserError Stmt)
+printStatement = do
+    valueMaybe <- expression
+    semicolonMaybe <- consume SEMICOLON ExpectedSemicolonError
+    case (valueMaybe, semicolonMaybe) of
+        (Left err, _) -> return $ Left err
+        (_, Left err) -> return $ Left err
+        (Right value, Right _) -> return $ Right $ Print value
+
+expressionStatement :: State ParserState (Either ParserError Stmt)
+expressionStatement = do
+    valueMaybe <- expression
+    semicolonMaybe <- consume SEMICOLON ExpectedSemicolonError
+    case (valueMaybe, semicolonMaybe) of
+        (Left err, _) -> return $ Left err
+        (_, Left err) -> return $ Left err
+        (Right value, Right _) -> return $ Right $ Expression value
+    
 
 expression :: State ParserState (Either ParserError Expr)
 expression = equality

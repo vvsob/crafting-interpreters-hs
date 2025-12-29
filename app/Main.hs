@@ -9,13 +9,12 @@ run source = do
     case tokensMaybe of
         Left UnexpectedCharacterError -> putStrLn "Unexpected character"
         Right tokens -> do
-            let exprMaybe = parse tokens
-            case exprMaybe of
+            let stmtMaybe = parse tokens
+            case stmtMaybe of
                 Left ExpectedExpressionError -> putStrLn "Expected expression"
                 Left MismatchedParenthesesError -> putStrLn "Mismatched parentheses"
-                Right expr -> do
-                    result <- eval expr
-                    print result
+                Left ExpectedSemicolonError -> putStrLn "Expected semicolon"
+                Right statements -> runStatements statements
 
 main :: IO ()
 main = putStr ">> " >> hFlush stdout >> getLine >>= run 

@@ -1,8 +1,14 @@
 module Lox.Expr (
+    Stmt (..),
     Expr (..)
 ) where
 
 import Lox.Scanner
+
+data Stmt =
+    Expression Expr |
+    Print Expr
+    deriving Show
 
 data Expr = 
     Literal Object | 

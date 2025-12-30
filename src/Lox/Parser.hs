@@ -1,6 +1,7 @@
 module Lox.Parser (
     SyntaxError (..),
-    parse
+    parse,
+    parseExpression
 ) where
 
 import Control.Monad
@@ -54,6 +55,9 @@ data SyntaxError = SyntaxError String deriving Show
 
 parse :: [Token] -> Either SyntaxError [Stmt]
 parse tokens = evalState program (ParserState {tokens=tokens})
+
+parseExpression :: [Token] -> Either SyntaxError Expr
+parseExpression tokens = evalState expression (ParserState {tokens=tokens})
 
 program :: State ParserState (Either SyntaxError [Stmt])
 program = do

@@ -21,14 +21,20 @@ data SyntaxError = SyntaxError String deriving Show
 --                | statement ;
 --
 -- statement      → exprStmt
+--                | forStmt
 --                | ifStmt
 --                | printStmt 
+--                | whileStmt
 --                | block ;
 --
 -- exprStmt       → expression ";" ;
+-- forStmt        → "for" "(" ( varDecl | exprStmt | ";" ) 
+--                  expression? ";"
+--                  expression? ") statement ;
 -- ifStmt         → "if" "(" expression ")" statement 
 --                ( "else" statement )? ;
 -- printStmt      → "print" expression ";" ;
+-- whileStmt      → "while" "(" expression ")" statement ;
 -- varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
 -- block          → "{" declaration* "}" ;
 --
@@ -85,11 +91,13 @@ varDeclaration = do
 
 statement :: State ParserState (Either SyntaxError Stmt)
 statement = do
-    tokenMaybe <- matchToken [IF, PRINT, LEFT_BRACE]
-    case tokenMaybe of
-        Just (Token {tokenType=IF}) -> ifStatement
-        Just (Token {tokenType=PRINT}) -> printStatement
-        Just (Token {tokenType=LEFT_BRACE}) -> do 
+    tokenTypeMaybe <- fmap tokenType <$> matchToken [FOR, IF, PRINT, WHILE, LEFT_BRACE]
+    case tokenTypeMaybe of
+        Just FOR -> forStatement
+        Just IF -> ifStatement
+        Just PRINT -> printStatement
+        Just WHILE -> whileStatement
+        Just LEFT_BRACE -> do 
             result <- fmap BlockStmt <$> block
             braceMaybe <- consume RIGHT_BRACE $ SyntaxError "Expected '}' after block"
             return $ braceMaybe >> result
@@ -105,6 +113,31 @@ block = do
             (Left err, _) -> return $ Left err
             (_, Left err) -> return $ Left err
             (Right decl, Right tail) -> return $ Right $ decl : tail
+
+forStatement :: State ParserState (Either SyntaxError Stmt)
+forStatement = do
+    leftParen <- consume LEFT_PAREN $ SyntaxError "Expected '(' after 'for'"
+    tokenTypeMaybe <- fmap tokenType <$> matchToken [SEMICOLON, VAR]
+    initializer <- case tokenTypeMaybe of
+        Just SEMICOLON -> return Nothing
+        Just VAR -> Just <$> varDeclaration
+        _ -> Just <$> expressionStatement
+    condition <- ifM (check SEMICOLON) (return Nothing) (Just <$> expression)
+    conditionSemicolon <- consume SEMICOLON $ SyntaxError "Expected ';' after loop condition"
+    increment <- ifM (check RIGHT_PAREN) (return Nothing) (Just <$> expression)
+    rightParen <- consume RIGHT_PAREN $ SyntaxError "Expected ')' after for clauses"
+    body <- statement
+    body1 <- case increment of
+        Just inc -> return $ BlockStmt <$> ((\x y -> [x, y]) <$> body <*> (ExpressionStmt <$> inc))
+        Nothing -> return body
+    cond1 <- case condition of
+        Just cond -> return cond
+        Nothing -> return $ Right $ LiteralExpr $ BoolObject True
+    let body2 = WhileStmt <$> cond1 <*> body1
+    body3 <- case initializer of
+        Just init -> return $ BlockStmt <$> ((\x y -> [x, y]) <$> init <*> body2)
+        Nothing -> return body2
+    return $ leftParen >> conditionSemicolon >> rightParen >> body3
 
 ifStatement :: State ParserState (Either SyntaxError Stmt)
 ifStatement = do
@@ -134,6 +167,13 @@ expressionStatement = do
         (_, Left err) -> return $ Left err
         (Right value, Right _) -> return $ Right $ ExpressionStmt value
     
+whileStatement :: State ParserState (Either SyntaxError Stmt)
+whileStatement = do
+    leftParenMaybe <- consume LEFT_PAREN $ SyntaxError "Expected '(' after 'if'"
+    conditionMaybe <- expression
+    rightParenMaybe <- consume RIGHT_PAREN $ SyntaxError "Expected ')' after if condition"
+    bodyMaybe <- statement
+    return $ WhileStmt <$> (leftParenMaybe >> conditionMaybe <* rightParenMaybe) <*> bodyMaybe
 
 expression :: State ParserState (Either SyntaxError Expr)
 expression = assignment

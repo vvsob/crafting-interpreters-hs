@@ -10,7 +10,8 @@ data Stmt =
     ExpressionStmt Expr |
     IfStmt Expr Stmt (Maybe Stmt) |
     PrintStmt Expr |
-    VariableStmt Token Expr
+    VariableStmt Token Expr |
+    WhileStmt Expr Stmt
     deriving Show
 
 data Expr = 

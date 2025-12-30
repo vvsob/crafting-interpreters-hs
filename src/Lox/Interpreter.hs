@@ -33,13 +33,19 @@ execute (PrintStmt expr) = do
 execute (VariableStmt name expr) = do
     value <- evalFrom expr
     modify (\s@(InterpreterState {environment=env}) -> s {environment=define (tokenLexeme name) value env})
+execute (WhileStmt condition body) = executeWhile condition body 
 
 executeBlock :: [Stmt] -> State InterpreterState ()
 executeBlock statements = do 
     oldEnv <- gets environment
     modify (\s@InterpreterState {environment=_} -> s {environment=emptyEnvironment {enclosing=Just oldEnv}})
     interpret statements
-    modify (\s@InterpreterState {environment=_} -> s {environment=oldEnv})
+    modify (\s@InterpreterState {environment=Environment {enclosing=Just enclosing}} -> s {environment=enclosing})
+
+executeWhile :: Expr -> Stmt -> State InterpreterState ()
+executeWhile condition body = do
+    shouldContinue <- evalFrom condition
+    when (isTruthy shouldContinue) $ execute body >> executeWhile condition body
 
 eval :: Expr -> IO Object
 eval expr = return $ evalState (evalFrom expr) emptyInterpreter

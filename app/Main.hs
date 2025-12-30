@@ -2,6 +2,7 @@ import Lox.Scanner
 import Lox.Parser
 import Lox.Interpreter
 import System.IO
+import System.Environment
 
 run :: String -> IO ()
 run source = do 
@@ -16,5 +17,13 @@ run source = do
                 Left ExpectedSemicolonError -> putStrLn "Expected semicolon"
                 Right statements -> runStatements statements
 
+repl :: IO ()
+repl = putStr ">> " >> hFlush stdout >> getLine >>= run 
+
 main :: IO ()
-main = putStr ">> " >> hFlush stdout >> getLine >>= run 
+main = getArgs >>= fs
+
+fs :: [String] -> IO ()
+fs [] = repl
+fs [s] = readFile s >>= run
+fs _ = putStrLn "Usage: lox [file]"

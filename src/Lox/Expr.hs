@@ -6,6 +6,7 @@ module Lox.Expr (
 import Lox.Scanner
 
 data Stmt =
+    BlockStmt [Stmt] |
     ExpressionStmt Expr |
     PrintStmt Expr |
     VariableStmt Token Expr

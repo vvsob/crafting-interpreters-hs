@@ -15,8 +15,9 @@ data ParserState = ParserState {tokens :: [Token]}
 data ParserError = MismatchedParenthesesError 
                  | ExpectedExpressionError 
                  | ExpectedSemicolonError
-                 | ExpectedVariableName
-                 | InvalidAssignmentTarget
+                 | ExpectedVariableNameError
+                 | ExpectedBraceAfterBlockError
+                 | InvalidAssignmentTargetError
     deriving Show
 
 -- program        → declaration* EOF ;
@@ -25,11 +26,13 @@ data ParserError = MismatchedParenthesesError
 --                | statement ;
 --
 -- statement      → exprStmt
---                | printStmt ;
+--                | printStmt 
+--                | block ;
 --
 -- exprStmt       → expression ";" ;
 -- printStmt      → "print" expression ";" ;
 -- varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
+-- block          → "{" declaration* "}" ;
 
 -- expression     → assignment ;
 -- assignment     → IDENTIFIER "=" assignment 
@@ -67,7 +70,7 @@ declaration = do
 
 varDeclaration :: State ParserState (Either ParserError Stmt)
 varDeclaration = do
-    maybeName <- consume IDENTIFIER ExpectedVariableName
+    maybeName <- consume IDENTIFIER ExpectedVariableNameError
     case maybeName of
         Left err -> return $ Left err
         Right name -> do
@@ -82,10 +85,25 @@ varDeclaration = do
 
 statement :: State ParserState (Either ParserError Stmt)
 statement = do
-    printMaybe <- matchToken [PRINT]
-    case printMaybe of
-        Just _ -> printStatement
+    tokenMaybe <- matchToken [PRINT, LEFT_BRACE]
+    case tokenMaybe of
+        Just (Token {tokenType=PRINT}) -> printStatement
+        Just (Token {tokenType=LEFT_BRACE}) -> do 
+            result <- fmap BlockStmt <$> block
+            braceMaybe <- consume RIGHT_BRACE ExpectedBraceAfterBlockError
+            return $ braceMaybe >> result
         _ -> expressionStatement
+
+block :: State ParserState (Either ParserError [Stmt])
+block = do
+    isRightBrace <- check RIGHT_BRACE
+    if isRightBrace then return $ Right [] else do
+        declMaybe <- declaration
+        tailMaybe <- block
+        case (declMaybe, tailMaybe) of
+            (Left err, _) -> return $ Left err
+            (_, Left err) -> return $ Left err
+            (Right decl, Right tail) -> return $ Right $ decl : tail
 
 printStatement :: State ParserState (Either ParserError Stmt)
 printStatement = do
@@ -119,7 +137,7 @@ assignment = do
             (Left err, _) -> return $ Left err
             (_, Left err) -> return $ Left err
             (Right (VariableExpr name), Right value) -> return $ Right $ AssignmentExpr name value
-            _ -> return $ Left InvalidAssignmentTarget
+            _ -> return $ Left InvalidAssignmentTargetError
     else return maybeExpr
 
 equality :: State ParserState (Either ParserError Expr)

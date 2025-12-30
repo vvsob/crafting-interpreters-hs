@@ -22,6 +22,7 @@ interpret :: [Stmt] -> State InterpreterState ()
 interpret = foldr ((>>) . execute) (return ())
 
 execute :: Stmt -> State InterpreterState ()
+execute (BlockStmt statements) = executeBlock statements
 execute (PrintStmt expr) = do
     value <- evalFrom expr
     modify (\s@(InterpreterState {io=io}) -> s {io=io >> print value})
@@ -29,6 +30,13 @@ execute (ExpressionStmt value) = void $ evalFrom value
 execute (VariableStmt name expr) = do
     value <- evalFrom expr
     modify (\s@(InterpreterState {environment=env}) -> s {environment=define (tokenLexeme name) value env})
+
+executeBlock :: [Stmt] -> State InterpreterState ()
+executeBlock statements = do 
+    oldEnv <- gets environment
+    modify (\s@InterpreterState {environment=_} -> s {environment=emptyEnvironment {enclosing=Just oldEnv}})
+    interpret statements
+    modify (\s@InterpreterState {environment=_} -> s {environment=oldEnv})
 
 eval :: Expr -> IO Object
 eval expr = return $ evalState (evalFrom expr) emptyInterpreter

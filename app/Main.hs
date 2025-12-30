@@ -8,7 +8,7 @@ run :: String -> IO ()
 run source = do 
     let tokensMaybe = scanTokensFromSource source
     case tokensMaybe of
-        Left UnexpectedCharacterError -> putStrLn "Unexpected character"
+        Left (LexicalError s) -> putStrLn s
         Right tokens -> do
             let stmtMaybe = parse tokens
             case stmtMaybe of
@@ -19,7 +19,7 @@ runEval :: String -> IO ()
 runEval source = do 
     let tokensMaybe = scanTokensFromSource source
     object <- case tokensMaybe of
-        Left UnexpectedCharacterError -> putStrLn "Unexpected character" >> return NullObject
+        Left (LexicalError s) -> putStrLn s >> return NullObject
         Right tokens -> do
             let exprMaybe = parseExpression tokens
             case exprMaybe of

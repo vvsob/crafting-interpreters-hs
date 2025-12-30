@@ -2,7 +2,7 @@ module Lox.Scanner (
     TokenType (..),
     Object (..),
     Token (..),
-    ScannerError (..),
+    LexicalError (..),
     scanTokensFromSource
 ) where
 
@@ -45,16 +45,16 @@ data Token = Token {
 
 data ScannerState = ScannerState {source :: String, current :: String, lineNumber :: Int}
 
-data ScannerError = UnexpectedCharacterError deriving Show
+data LexicalError = LexicalError String
 
 emptyScannerState :: String -> ScannerState
 emptyScannerState source = 
     ScannerState {source=source, current="", lineNumber=1}
 
-scanTokensFromSource :: String -> Either ScannerError [Token]
+scanTokensFromSource :: String -> Either LexicalError [Token]
 scanTokensFromSource source = evalState scanTokens (emptyScannerState source)
 
-scanTokens :: State ScannerState (Either ScannerError [Token])
+scanTokens :: State ScannerState (Either LexicalError [Token])
 scanTokens = do
     atEnd <- isAtEnd
     if atEnd then return . return <$> addToken EOF else do
@@ -70,7 +70,7 @@ isAtEnd = gets scannerIsAtEnd
 scannerIsAtEnd :: ScannerState -> Bool
 scannerIsAtEnd ScannerState {source=source} = null source
 
-scanToken :: State ScannerState (Either ScannerError (Maybe Token))
+scanToken :: State ScannerState (Either LexicalError (Maybe Token))
 scanToken = do
     resetCurrent
     c <- advance
@@ -97,7 +97,7 @@ scanToken = do
         '\r' -> return nothing
         '\t' -> return nothing
         '\n' -> modify (\s@(ScannerState {lineNumber=n}) -> s {lineNumber=n+1}) >> return nothing
-        c -> if isDigit c then ok <$> scanNumber else if isAlpha c then ok <$> scanIdentifier else return $ Left UnexpectedCharacterError
+        c -> if isDigit c then ok <$> scanNumber else if isAlpha c then ok <$> scanIdentifier else return $ Left $ LexicalError "Unexpected character"
 
 scanString :: State ScannerState Token
 scanString = do

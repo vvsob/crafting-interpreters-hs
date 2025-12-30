@@ -23,10 +23,13 @@ interpret = foldr ((>>) . execute) (return ())
 
 execute :: Stmt -> State InterpreterState ()
 execute (BlockStmt statements) = executeBlock statements
+execute (ExpressionStmt value) = void $ evalFrom value
+execute (IfStmt condition thenBranch elseBranchMaybe) = do
+    condValue <- isTruthy <$> evalFrom condition
+    if condValue then execute thenBranch else forM_ elseBranchMaybe execute 
 execute (PrintStmt expr) = do
     value <- evalFrom expr
     modify (\s@(InterpreterState {io=io}) -> s {io=io >> print value})
-execute (ExpressionStmt value) = void $ evalFrom value
 execute (VariableStmt name expr) = do
     value <- evalFrom expr
     modify (\s@(InterpreterState {environment=env}) -> s {environment=define (tokenLexeme name) value env})
@@ -59,10 +62,16 @@ evalFrom (UnaryExpr op expr) = do
     right <- evalFrom expr
     case (tokenType op, right) of
         (MINUS, NumberObject x) -> return $ NumberObject (-x)
-        (BANG, NullObject) -> return $ BoolObject False
-        (BANG, BoolObject x) -> return $ BoolObject (not x)
-        (BANG, _) -> return $ BoolObject True
+        (BANG, object) -> return $ BoolObject $ not $ isTruthy object
         _ -> error "Type error"
+evalFrom (LogicalExpr leftExpr op rightExpr) = do
+    isLeftTruthy <- isTruthy <$> evalFrom leftExpr
+    case (tokenType op, isLeftTruthy) of
+        (OR, True) -> return $ BoolObject True
+        (OR, False) -> evalFrom rightExpr
+        (AND, True) -> evalFrom rightExpr
+        (AND, False) -> return $ BoolObject False
+        _ -> error "Unreachable"
 evalFrom (BinaryExpr leftExpr op rightExpr) = do
     left <- evalFrom leftExpr
     right <- evalFrom rightExpr
@@ -83,3 +92,7 @@ evalFrom (BinaryExpr leftExpr op rightExpr) = do
         
         _ -> error "Type error"
 
+isTruthy :: Object -> Bool
+isTruthy NullObject = False
+isTruthy (BoolObject False) = False
+isTruthy _ = True

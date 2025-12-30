@@ -12,9 +12,7 @@ run source = do
         Right tokens -> do
             let stmtMaybe = parse tokens
             case stmtMaybe of
-                Left ExpectedExpressionError -> putStrLn "Expected expression"
-                Left MismatchedParenthesesError -> putStrLn "Mismatched parentheses"
-                Left ExpectedSemicolonError -> putStrLn "Expected semicolon"
+                Left (SyntaxError s) -> putStrLn s
                 Right statements -> runStatements statements
 
 repl :: IO ()

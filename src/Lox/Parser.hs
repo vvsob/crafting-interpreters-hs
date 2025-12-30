@@ -1,5 +1,5 @@
 module Lox.Parser (
-    ParserError (..),
+    SyntaxError (..),
     parse
 ) where
 
@@ -9,16 +9,11 @@ import Data.Either
 import Data.Maybe
 import Lox.Scanner
 import Lox.Expr
+import Control.Monad.Extra (ifM)
 
 data ParserState = ParserState {tokens :: [Token]}
 
-data ParserError = MismatchedParenthesesError 
-                 | ExpectedExpressionError 
-                 | ExpectedSemicolonError
-                 | ExpectedVariableNameError
-                 | ExpectedBraceAfterBlockError
-                 | InvalidAssignmentTargetError
-    deriving Show
+data SyntaxError = SyntaxError String deriving Show
 
 -- program        → declaration* EOF ;
 --
@@ -26,17 +21,22 @@ data ParserError = MismatchedParenthesesError
 --                | statement ;
 --
 -- statement      → exprStmt
+--                | ifStmt
 --                | printStmt 
 --                | block ;
 --
 -- exprStmt       → expression ";" ;
+-- ifStmt         → "if" "(" expression ")" statement 
+--                ( "else" statement )? ;
 -- printStmt      → "print" expression ";" ;
 -- varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
 -- block          → "{" declaration* "}" ;
-
+--
 -- expression     → assignment ;
 -- assignment     → IDENTIFIER "=" assignment 
---                | equality ;
+--                | logic_or;
+-- logic_or       → logic_and ( "or" logic_and )* ;
+-- logic_and      → equality ( "and" equality )* ;
 -- equality       → comparison ( ( "!=" | "==" ) comparison )* ;
 -- comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 -- term           → factor ( ( "-" | "+" ) factor )* ;
@@ -46,10 +46,10 @@ data ParserError = MismatchedParenthesesError
 -- primary        → NUMBER | STRING | "true" | "false" | "nil"
 --                | "(" expression ")" | IDENTIFIER;
 
-parse :: [Token] -> Either ParserError [Stmt]
+parse :: [Token] -> Either SyntaxError [Stmt]
 parse tokens = evalState program (ParserState {tokens=tokens})
 
-program :: State ParserState (Either ParserError [Stmt])
+program :: State ParserState (Either SyntaxError [Stmt])
 program = do
     atEnd <- isAtEnd
     if atEnd then return $ Right [] else do
@@ -61,40 +61,41 @@ program = do
                 case tailMaybe of
                     Left err -> return $ Left err
                     Right tail -> return $ Right $ head : tail
-declaration :: State ParserState (Either ParserError Stmt)
+declaration :: State ParserState (Either SyntaxError Stmt)
 declaration = do
     varMaybe <- matchToken [VAR]
     case varMaybe of
         Just _ -> varDeclaration
         _ -> statement
 
-varDeclaration :: State ParserState (Either ParserError Stmt)
+varDeclaration :: State ParserState (Either SyntaxError Stmt)
 varDeclaration = do
-    maybeName <- consume IDENTIFIER ExpectedVariableNameError
+    maybeName <- consume IDENTIFIER $ SyntaxError "Expected variable name" 
     case maybeName of
         Left err -> return $ Left err
         Right name -> do
             hasInit <- isJust <$> matchToken [EQUAL]
             initMaybe <- if hasInit then expression else return $ Right $ LiteralExpr NullObject
-            semicolonMaybe <- consume SEMICOLON ExpectedSemicolonError
+            semicolonMaybe <- consume SEMICOLON $ SyntaxError "Expected semicolon" 
             case (initMaybe, semicolonMaybe) of
                 (Left err, _) -> return $ Left err
                 (_, Left err) -> return $ Left err
                 (Right init, Right _) -> return $ Right $ VariableStmt name init
 
 
-statement :: State ParserState (Either ParserError Stmt)
+statement :: State ParserState (Either SyntaxError Stmt)
 statement = do
-    tokenMaybe <- matchToken [PRINT, LEFT_BRACE]
+    tokenMaybe <- matchToken [IF, PRINT, LEFT_BRACE]
     case tokenMaybe of
+        Just (Token {tokenType=IF}) -> ifStatement
         Just (Token {tokenType=PRINT}) -> printStatement
         Just (Token {tokenType=LEFT_BRACE}) -> do 
             result <- fmap BlockStmt <$> block
-            braceMaybe <- consume RIGHT_BRACE ExpectedBraceAfterBlockError
+            braceMaybe <- consume RIGHT_BRACE $ SyntaxError "Expected '}' after block"
             return $ braceMaybe >> result
         _ -> expressionStatement
 
-block :: State ParserState (Either ParserError [Stmt])
+block :: State ParserState (Either SyntaxError [Stmt])
 block = do
     isRightBrace <- check RIGHT_BRACE
     if isRightBrace then return $ Right [] else do
@@ -105,31 +106,41 @@ block = do
             (_, Left err) -> return $ Left err
             (Right decl, Right tail) -> return $ Right $ decl : tail
 
-printStatement :: State ParserState (Either ParserError Stmt)
+ifStatement :: State ParserState (Either SyntaxError Stmt)
+ifStatement = do
+    leftParenMaybe <- consume LEFT_PAREN $ SyntaxError "Expected '(' after 'if'"
+    conditionMaybe <- expression
+    rightParenMaybe <- consume RIGHT_PAREN $ SyntaxError "Expected ')' after if condition"
+    thenBranchMaybe <- statement
+    isElse <- isJust <$> matchToken [ELSE]
+    elseBranchMaybe <- if isElse then fmap Just <$> statement else return $ Right Nothing
+    return $ IfStmt <$> (leftParenMaybe >> conditionMaybe <* rightParenMaybe) <*> thenBranchMaybe <*> elseBranchMaybe
+
+printStatement :: State ParserState (Either SyntaxError Stmt)
 printStatement = do
     valueMaybe <- expression
-    semicolonMaybe <- consume SEMICOLON ExpectedSemicolonError
+    semicolonMaybe <- consume SEMICOLON $ SyntaxError "Expected ';'"
     case (valueMaybe, semicolonMaybe) of
         (Left err, _) -> return $ Left err
         (_, Left err) -> return $ Left err
         (Right value, Right _) -> return $ Right $ PrintStmt value
 
-expressionStatement :: State ParserState (Either ParserError Stmt)
+expressionStatement :: State ParserState (Either SyntaxError Stmt)
 expressionStatement = do
     valueMaybe <- expression
-    semicolonMaybe <- consume SEMICOLON ExpectedSemicolonError
+    semicolonMaybe <- consume SEMICOLON $ SyntaxError "Expected ';'"
     case (valueMaybe, semicolonMaybe) of
         (Left err, _) -> return $ Left err
         (_, Left err) -> return $ Left err
         (Right value, Right _) -> return $ Right $ ExpressionStmt value
     
 
-expression :: State ParserState (Either ParserError Expr)
+expression :: State ParserState (Either SyntaxError Expr)
 expression = assignment
 
-assignment :: State ParserState (Either ParserError Expr)
+assignment :: State ParserState (Either SyntaxError Expr)
 assignment = do
-    maybeExpr <- equality
+    maybeExpr <- logicalOr
     matchedEqual <- isJust <$> matchToken [EQUAL]
     if matchedEqual then do
         maybeValue <- assignment
@@ -137,38 +148,52 @@ assignment = do
             (Left err, _) -> return $ Left err
             (_, Left err) -> return $ Left err
             (Right (VariableExpr name), Right value) -> return $ Right $ AssignmentExpr name value
-            _ -> return $ Left InvalidAssignmentTargetError
+            _ -> return $ Left $ SyntaxError "Invalid assignment target" 
     else return maybeExpr
 
-equality :: State ParserState (Either ParserError Expr)
+logicalOr :: State ParserState (Either SyntaxError Expr)
+logicalOr = do
+    exprMaybe <- logicalAnd
+    case exprMaybe of
+        Left err -> return $ Left err
+        Right expr -> fmap (mergeExpressionLogicalMaybe expr) <$> matchTailLogical [OR] logicalAnd
+
+logicalAnd :: State ParserState (Either SyntaxError Expr)
+logicalAnd = do
+    exprMaybe <- equality
+    case exprMaybe of
+        Left err -> return $ Left err
+        Right expr -> fmap (mergeExpressionLogicalMaybe expr) <$> matchTailLogical [AND] logicalAnd
+
+equality :: State ParserState (Either SyntaxError Expr)
 equality = do
     exprMaybe <- comparison
     case exprMaybe of
         Left err -> return $ Left err
         Right expr -> fmap (mergeExpressionMaybe expr) <$> matchTail [BANG_EQUAL, EQUAL_EQUAL] comparison
 
-comparison :: State ParserState (Either ParserError Expr)
+comparison :: State ParserState (Either SyntaxError Expr)
 comparison = do
     exprMaybe <- term 
     case exprMaybe of
         Left err -> return $ Left err
         Right expr -> fmap (mergeExpressionMaybe expr) <$> matchTail [GREATER, GREATER_EQUAL, LESS, LESS_EQUAL] term
 
-term :: State ParserState (Either ParserError Expr)
+term :: State ParserState (Either SyntaxError Expr)
 term = do
     exprMaybe <- factor
     case exprMaybe of
         Left err -> return $ Left err
         Right expr -> fmap (mergeExpressionMaybe expr) <$> matchTail [MINUS, PLUS] factor
 
-factor :: State ParserState (Either ParserError Expr)
+factor :: State ParserState (Either SyntaxError Expr)
 factor = do
     exprMaybe <- unary
     case exprMaybe of
         Left err -> return $ Left err
         Right expr -> fmap (mergeExpressionMaybe expr) <$> matchTail [SLASH, STAR] unary
 
-unary :: State ParserState (Either ParserError Expr)
+unary :: State ParserState (Either SyntaxError Expr)
 unary = do
     maybeOperator <- matchToken [BANG, MINUS]
     case maybeOperator of
@@ -179,7 +204,7 @@ unary = do
                 Left err -> return $ Left err
                 Right expr -> return $ Right $ UnaryExpr op expr
 
-primary :: State ParserState (Either ParserError Expr)
+primary :: State ParserState (Either SyntaxError Expr)
 primary = do
     token <- advance
     case tokenType token of
@@ -193,13 +218,19 @@ primary = do
             case exprMaybe of
                 Left err -> return $ Left err
                 Right expr -> do 
-                    consume RIGHT_PAREN MismatchedParenthesesError
+                    consume RIGHT_PAREN $ SyntaxError "Mismatched parentheses"
                     return $ Right $ GroupingExpr expr
         IDENTIFIER -> return $ Right $ VariableExpr token
-        _ -> return $ Left ExpectedExpressionError
+        _ -> return $ Left $ SyntaxError "Expected expression" 
 
-matchTail :: [TokenType] -> State ParserState (Either ParserError Expr) -> State ParserState (Either ParserError (Maybe (Token, Expr)))
-matchTail tokenTypes f = do
+matchTail :: [TokenType] -> State ParserState (Either SyntaxError Expr) -> State ParserState (Either SyntaxError (Maybe (Token, Expr)))
+matchTail tokenTypes = matchTailWith tokenTypes mergeExpressionMaybe
+
+matchTailLogical :: [TokenType] -> State ParserState (Either SyntaxError Expr) -> State ParserState (Either SyntaxError (Maybe (Token, Expr)))
+matchTailLogical tokenTypes = matchTailWith tokenTypes mergeExpressionLogicalMaybe
+
+matchTailWith :: [TokenType] -> (Expr -> Maybe (Token, Expr) -> Expr) -> State ParserState (Either SyntaxError Expr) -> State ParserState (Either SyntaxError (Maybe (Token, Expr)))
+matchTailWith tokenTypes m f = do
     maybeOperator <- matchToken tokenTypes
     case maybeOperator of
         Nothing -> return $ Right Nothing
@@ -209,11 +240,16 @@ matchTail tokenTypes f = do
             case (exprMaybe, restMaybe) of
                 (Left err, _) -> return $ Left err
                 (_, Left err) -> return $ Left err
-                (Right expr, Right rest) -> return $ Right $ Just (op, mergeExpressionMaybe expr rest)
+                (Right expr, Right rest) -> return $ Right $ Just (op, m expr rest)
+
 
 mergeExpressionMaybe :: Expr -> Maybe (Token, Expr) -> Expr
 mergeExpressionMaybe expr Nothing = expr
 mergeExpressionMaybe left (Just (op, right)) = BinaryExpr left op right
+
+mergeExpressionLogicalMaybe :: Expr -> Maybe (Token, Expr) -> Expr
+mergeExpressionLogicalMaybe expr Nothing = expr
+mergeExpressionLogicalMaybe left (Just (op, right)) = LogicalExpr left op right
 
 matchToken :: [TokenType] -> State ParserState (Maybe Token)
 matchToken [] = return Nothing
@@ -226,7 +262,7 @@ check t = do
     atEnd <- isAtEnd
     if atEnd then return False else (== t) . tokenType <$> peek
 
-consume :: TokenType -> ParserError -> State ParserState (Either ParserError Token)
+consume :: TokenType -> SyntaxError -> State ParserState (Either SyntaxError Token)
 consume t err = do
     isOk <- check t
     if isOk then Right <$> advance else return $ Left err
